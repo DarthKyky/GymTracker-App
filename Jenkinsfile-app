@@ -220,13 +220,9 @@ stage('Deploy application') {
 
         tar -xzf /tmp/repo.tgz -C ~/app
 
-        echo "=== APP DIR ==="
-        ls -la ~/app
+        cd ~/app
 
-        echo "=== TREE ==="
-        find ~/app -maxdepth 3 -type d
-
-        exit 1
+        sudo docker compose up -d
       '
     '''
   }
