@@ -11,7 +11,7 @@ environment {
 
 ```
 IMAGE      = 'ubuntu-24.04'
-FLAVOR     = 'dev.small'
+FLAVOR     = 'dev.large'
 NETWORK    = 'devnet'
 KEYPAIR    = 'devteam-key'
 
