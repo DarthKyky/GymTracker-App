@@ -1,0 +1,360 @@
+pipeline {
+
+agent any
+
+options {
+timestamps()
+disableConcurrentBuilds()
+}
+
+environment {
+
+```
+IMAGE      = 'ubuntu-24.04'
+FLAVOR     = 'dev.small'
+NETWORK    = 'devnet'
+KEYPAIR    = 'devteam-key'
+
+SSH_USER   = 'ubuntu'
+SSH_KEY    = '/var/lib/jenkins/.ssh/devteam'
+
+SSH_OPTS   = '-o StrictHostKeyChecking=no ' +
+             '-o UserKnownHostsFile=/dev/null ' +
+             '-o ConnectTimeout=5 ' +
+             '-o IdentitiesOnly=yes'
+
+CI_SG_NAME = 'ci-ssh'
+CI_CIDR    = '10.20.0.0/24'
+```
+
+}
+
+stages {
+
+```
+// ========================================================
+// INIT
+// ========================================================
+
+stage('Init') {
+
+  steps {
+
+    sh '''
+      set -e
+
+      rm -rf reports || true
+      mkdir -p reports
+
+      rm -f vm_name.txt vm_ip.txt repo.tgz || true
+    '''
+  }
+}
+
+// ========================================================
+// CREATE VM
+// ========================================================
+
+stage('Create APP VM') {
+
+  steps {
+
+    withCredentials([
+      file(credentialsId: 'openstack-openrc',
+      variable: 'OPENRC')
+    ]) {
+
+      sh '''
+        set -e
+
+        . "$OPENRC"
+
+        VM_NAME="app-vm-${BUILD_NUMBER}"
+
+        echo "$VM_NAME" > vm_name.txt
+
+        openstack server create \
+          --image "$IMAGE" \
+          --flavor "$FLAVOR" \
+          --network "$NETWORK" \
+          --key-name "$KEYPAIR" \
+          "$VM_NAME"
+
+        for i in $(seq 1 60); do
+
+          STATUS=$(openstack server show "$VM_NAME" \
+            -f value -c status)
+
+          echo "status=$STATUS"
+
+          if [ "$STATUS" = "ACTIVE" ]; then
+            exit 0
+          fi
+
+          sleep 5
+        done
+
+        echo "VM failed to reach ACTIVE"
+
+        exit 1
+      '''
+    }
+  }
+}
+
+// ========================================================
+// RESOLVE IP
+// ========================================================
+
+stage('Resolve VM IP') {
+
+  steps {
+
+    withCredentials([
+      file(credentialsId: 'openstack-openrc',
+      variable: 'OPENRC')
+    ]) {
+
+      sh '''
+        set -e
+
+        . "$OPENRC"
+
+        VM_NAME=$(cat vm_name.txt)
+
+        IP=$(openstack server show "$VM_NAME" \
+          -f value -c addresses \
+          | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' \
+          | head -n1)
+
+        echo "$IP" > vm_ip.txt
+
+        echo "Resolved IP: $IP"
+      '''
+    }
+  }
+}
+
+// ========================================================
+// WAIT SSH
+// ========================================================
+
+stage('Wait SSH') {
+
+  steps {
+
+    sh '''
+      set -e
+
+      IP=$(cat vm_ip.txt)
+
+      chmod 600 "$SSH_KEY"
+
+      for i in $(seq 1 120); do
+
+        echo "SSH attempt: $i"
+
+        if ssh $SSH_OPTS \
+          -i "$SSH_KEY" \
+          "$SSH_USER@$IP" \
+          "echo ok"; then
+
+          echo "SSH READY"
+
+          exit 0
+        fi
+
+        sleep 5
+      done
+
+      echo "SSH timeout"
+
+      exit 1
+    '''
+  }
+}
+
+// ========================================================
+// INSTALL DOCKER
+// ========================================================
+
+stage('Install Docker') {
+
+  steps {
+
+    sh '''
+      set -e
+
+      IP=$(cat vm_ip.txt)
+
+      ssh $SSH_OPTS \
+        -i "$SSH_KEY" \
+        "$SSH_USER@$IP" '
+
+        set -e
+
+        sudo apt-get update
+
+        sudo apt-get install -y \
+          docker.io \
+          docker-compose-v2
+
+        sudo systemctl enable docker
+        sudo systemctl start docker
+
+        sudo usermod -aG docker ubuntu
+      '
+    '''
+  }
+}
+
+// ========================================================
+// UPLOAD REPOSITORY
+// ========================================================
+
+stage('Upload repository') {
+
+  steps {
+
+    sh '''
+      set -e
+
+      IP=$(cat vm_ip.txt)
+
+      git archive --format=tar.gz -o repo.tgz HEAD
+
+      scp $SSH_OPTS \
+        -i "$SSH_KEY" \
+        repo.tgz \
+        "$SSH_USER@$IP:/tmp/repo.tgz"
+    '''
+  }
+}
+
+// ========================================================
+// DEPLOY APPLICATION
+// ========================================================
+
+stage('Deploy application') {
+
+  steps {
+
+    sh '''
+      set -e
+
+      IP=$(cat vm_ip.txt)
+
+      ssh $SSH_OPTS \
+        -i "$SSH_KEY" \
+        "$SSH_USER@$IP" '
+
+        set -e
+
+        mkdir -p ~/app
+
+        tar -xzf /tmp/repo.tgz -C ~/app
+
+        cd ~/app/GymTracker-App
+
+        sudo docker compose up -d
+      '
+    '''
+  }
+}
+
+// ========================================================
+// HEALTHCHECK
+// ========================================================
+
+stage('Healthcheck') {
+
+  steps {
+
+    sh '''
+      set -e
+
+      IP=$(cat vm_ip.txt)
+
+      sleep 20
+
+      curl -f "http://$IP:80" \
+        | tee reports/curl-response.txt
+    '''
+  }
+}
+
+// ========================================================
+// COLLECT LOGS
+// ========================================================
+
+stage('Collect logs') {
+
+  steps {
+
+    sh '''
+      set -e
+
+      IP=$(cat vm_ip.txt)
+
+      ssh $SSH_OPTS \
+        -i "$SSH_KEY" \
+        "$SSH_USER@$IP" '
+
+        sudo docker ps
+      ' > reports/docker-ps.txt
+
+      ssh $SSH_OPTS \
+        -i "$SSH_KEY" \
+        "$SSH_USER@$IP" '
+
+        cd ~/app/GymTracker-App
+
+        sudo docker compose logs
+      ' > reports/docker-compose.log
+    '''
+  }
+}
+```
+
+}
+
+// ==========================================================
+// POST
+// ==========================================================
+
+post {
+
+```
+always {
+
+  archiveArtifacts artifacts: 'reports/**',
+    allowEmptyArchive: true
+
+  script {
+
+    withCredentials([
+      file(credentialsId: 'openstack-openrc',
+      variable: 'OPENRC')
+    ]) {
+
+      sh '''
+        set +e
+
+        . "$OPENRC"
+
+        if [ -f vm_name.txt ]; then
+
+          VM_NAME=$(cat vm_name.txt)
+
+          echo "Deleting VM: $VM_NAME"
+
+          openstack server delete "$VM_NAME" || true
+        fi
+      '''
+    }
+  }
+}
+```
+
+}
+}
