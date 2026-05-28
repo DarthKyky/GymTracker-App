@@ -269,7 +269,7 @@ stage('Collect logs') {
         -i "$SSH_KEY" \
         "$SSH_USER@$IP" '
 
-        cd ~/app/GymTracker-App
+        cd ~/app
 
         sudo docker-compose logs
       ' > reports/docker-compose.log
