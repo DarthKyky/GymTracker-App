@@ -9,7 +9,6 @@ disableConcurrentBuilds()
 
 environment {
 
-```
 IMAGE      = 'ubuntu-24.04'
 FLAVOR     = 'dev.large'
 NETWORK    = 'devnet'
@@ -25,7 +24,6 @@ SSH_OPTS   = '-o StrictHostKeyChecking=no ' +
 
 CI_SG_NAME = 'ci-ssh'
 CI_CIDR    = '10.20.0.0/24'
-```
 
 }
 
