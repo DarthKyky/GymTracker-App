@@ -220,9 +220,13 @@ stage('Deploy application') {
 
         tar -xzf /tmp/repo.tgz -C ~/app
 
-        cd ~/app/GymTracker-App
+        echo "=== APP DIR ==="
+        ls -la ~/app
 
-        sudo docker-compose up -d
+        echo "=== TREE ==="
+        find ~/app -maxdepth 3 -type d
+
+        exit 1
       '
     '''
   }
