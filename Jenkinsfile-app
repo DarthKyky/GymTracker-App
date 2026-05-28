@@ -272,13 +272,11 @@ stage('Collect logs') {
     '''
   }
 }
-```
 
 }
 
 post {
 
-```
 always {
 
   archiveArtifacts artifacts: 'reports/**',
@@ -308,7 +306,6 @@ always {
     }
   }
 }
-```
 
 }
 }
