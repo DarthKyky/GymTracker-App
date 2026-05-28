@@ -9,7 +9,6 @@ disableConcurrentBuilds()
 
 environment {
 
-```
 IMAGE      = 'ubuntu-24.04'
 FLAVOR     = 'dev.small'
 NETWORK    = 'devnet'
@@ -22,13 +21,11 @@ SSH_OPTS   = '-o StrictHostKeyChecking=no ' +
              '-o UserKnownHostsFile=/dev/null ' +
              '-o ConnectTimeout=5 ' +
              '-o IdentitiesOnly=yes'
-```
 
 }
 
 stages {
 
-```
 stage('Init') {
 
   steps {
