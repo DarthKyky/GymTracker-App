@@ -1,6 +1,6 @@
 # Env
 .env
-
+.env.exmaple
 # Node
 node_modules/
 backend/node_modules/
